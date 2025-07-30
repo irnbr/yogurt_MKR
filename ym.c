@@ -1,5 +1,5 @@
 /*
- * This file is part of the firmware for yogurt maker project
+* This file is part of the firmware for yogurt maker project
  * (https://github.com/mister-grumbler/yogurt-maker).
  *
  * This program is free software: you can redistribute it and/or modify
@@ -23,97 +23,120 @@
 #include "relay.h"
 #include "timer.h"
 
-#define INTERRUPT_ENABLE    __asm rim __endasm;
-#define INTERRUPT_DISABLE   __asm sim __endasm;
-#define WAIT_FOR_INTERRUPT  __asm wfi __endasm;
+/* Макросы для управления прерываниями */
+#define INTERRUPT_ENABLE    __asm rim __endasm;  /* Разрешить прерывания */
+#define INTERRUPT_DISABLE   __asm sim __endasm;  /* Запретить прерывания */
+#define WAIT_FOR_INTERRUPT  __asm wfi __endasm;  /* Ожидать прерывание */
 
-void strConcat (unsigned char * from, unsigned char * to)
+/**
+ * @brief Конкатенация двух строк
+ * @param from Указатель на исходную строку
+ * @param to Указатель на целевую строку (должен иметь достаточный размер)
+ */
+void strConcat(unsigned char * from, unsigned char * to)
 {
     unsigned char i, s;
 
+    /* Находим конец целевой строки */
     for (i = 0; to[i] != 0; i++);
 
-    s = i;
+    s = i; /* Сохраняем позицию конца строки */
 
+    /* Копируем содержимое исходной строки */
     for (i = 0; from[i] != 0; i++) {
         to[s + i] = from[i];
     }
 
-    to[s + i] = 0;
+    to[s + i] = 0; /* Устанавливаем завершающий нуль-символ */
 }
 
 /**
- * @brief
+ * @brief Главная функция программы
+ * @return Технически никогда не возвращает значение (бесконечный цикл)
  */
-int main()
+int main(void)
 {
-    static unsigned char* stringBuffer[7];
-    static unsigned char* timerBuffer[5];
-    unsigned char paramMsg[] = {'P', '0', 0};
+    /* Буферы для работы с дисплеем */
+    static unsigned char* stringBuffer[7];  /* Буфер для строковых данных */
+    static unsigned char* timerBuffer[5];   /* Буфер для времени */
+    unsigned char paramMsg[] = {'P', '0', 0}; /* Шаблон сообщения параметра */
 
-    initMenu();
-    initButtons();
-    initParamsEEPROM();
-    initDisplay();
-    initADC();
-    initRelay();
-    initTimer();
+    /* Инициализация всех модулей системы */
+    initMenu();            /* Меню */
+    initButtons();         /* Кнопки */
+    initParamsEEPROM();    /* Параметры в EEPROM */
+    initDisplay();         /* Дисплей */
+    initADC();             /* АЦП и датчик температуры */
+    initRelay();           /* Управление реле */
+    initTimer();           /* Таймеры системы */
 
-    INTERRUPT_ENABLE
+    INTERRUPT_ENABLE;      /* Разрешаем обработку прерываний */
 
-    // Loop
+    /* Основной бесконечный цикл программы */
     while (true) {
+        /* Отключаем тестовый режим дисплея после первой секунды работы */
         if (getUptimeSeconds() > 0) {
-            setDisplayTestMode (false, "");
+            setDisplayTestMode(false, "");
         }
 
+        /* Обработка текущего состояния меню */
         if (getMenuDisplay() == MENU_ROOT) {
-            // Alternately show values for temperature and fermentation timer
-            // if it is running.
+            /* В основном меню попеременно показываем температуру и таймер */
             if (isRelayEnabled() && getUptimeSeconds() & 0x08) {
-                stringBuffer[0] = 0;
+                stringBuffer[0] = 0; /* Очищаем буфер */
 
-                if (isFTimer() ) {
-                    // Making blink the dot in between the hours and minutes.
-                    if ( (getUptimeTicks() & 0x100) ) {
-                        uptimeToString ( (unsigned char*) stringBuffer, "Ttt");
+                if (isFTimer()) {
+                    /* Мигаем точкой между часами и минутами */
+                    if ((getUptimeTicks() & 0x100)) {
+                        uptimeToString((unsigned char*)stringBuffer, "Ttt");
                     } else {
-                        uptimeToString ( (unsigned char*) stringBuffer, "T.tt");
+                        uptimeToString((unsigned char*)stringBuffer, "T.tt");
                     }
                 } else {
-                    // Show "n.t.r." -> no timer is running
-                    setDisplayStr ("N.T.R.");
-                    continue;
+                    /* Если таймер не активен - показываем "No Timer Running" */
+                    setDisplayStr("N.T.R.");
+                    continue; /* Переходим к следующей итерации */
                 }
 
-                setDisplayStr ( (char*) stringBuffer);
+                setDisplayStr((char*)stringBuffer);
             } else {
+                /* Показываем текущую температуру */
                 int temp = getTemperature();
-                itofpa (temp, (char*) stringBuffer, 0);
-                setDisplayStr ( (char*) stringBuffer);
+                itofpa(temp, (char*)stringBuffer, 0);
+                setDisplayStr((char*)stringBuffer);
 
-                if (getParamById (PARAM_OVERHEAT_INDICATION) ) {
-                    if (temp < getParamById (PARAM_MIN_TEMPERATURE) ) {
-                        setDisplayStr ("LLL");
-                    } else if (temp > getParamById (PARAM_MAX_TEMPERATURE) ) {
-                        setDisplayStr ("HHH");
+                /* Проверка и индикация граничных значений температуры */
+                if (getParamById(PARAM_OVERHEAT_INDICATION)) {
+                    if (temp < getParamById(PARAM_MIN_TEMPERATURE)) {
+                        setDisplayStr("LLL"); /* Температура ниже минимальной */
+                    } else if (temp > getParamById(PARAM_MAX_TEMPERATURE)) {
+                        setDisplayStr("HHH"); /* Температура выше максимальной */
                     }
                 }
             }
-        } else if (getMenuDisplay() == MENU_SET_TIMER) {
-            paramToString (PARAM_FERMENTATION_TIME, (char*) stringBuffer);
-            setDisplayStr ( (char*) stringBuffer);
-        } else if (getMenuDisplay() == MENU_SELECT_PARAM) {
+        } 
+        else if (getMenuDisplay() == MENU_SET_TIMER) {
+            /* Режим установки таймера ферментации */
+            paramToString(PARAM_FERMENTATION_TIME, (char*)stringBuffer);
+            setDisplayStr((char*)stringBuffer);
+        } 
+        else if (getMenuDisplay() == MENU_SELECT_PARAM) {
+            /* Режим выбора параметра (P0, P1...) */
             paramMsg[1] = '0' + getParamId();
-            setDisplayStr ( (unsigned char*) &paramMsg);
-        } else if (getMenuDisplay() == MENU_CHANGE_PARAM) {
-            paramToString (getParamId(), (char*) stringBuffer);
-            setDisplayStr ( (char *) stringBuffer);
-        } else {
-            setDisplayStr ("ERR");
-            setDisplayOff ( (bool) ( (unsigned char) getUptimeTicks() & 0x80) );
+            setDisplayStr((unsigned char*)&paramMsg);
+        } 
+        else if (getMenuDisplay() == MENU_CHANGE_PARAM) {
+            /* Режим изменения параметра */
+            paramToString(getParamId(), (char*)stringBuffer);
+            setDisplayStr((char*)stringBuffer);
+        } 
+        else {
+            /* Неизвестное состояние меню - показываем ошибку */
+            setDisplayStr("ERR");
+            /* Мигаем дисплеем при ошибке */
+            setDisplayOff((bool)((unsigned char)getUptimeTicks() & 0x80));
         }
 
-        WAIT_FOR_INTERRUPT
+        WAIT_FOR_INTERRUPT; /* Ожидаем следующее прерывание */
     };
 }
